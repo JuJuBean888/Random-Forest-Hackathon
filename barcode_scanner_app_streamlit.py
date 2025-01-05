@@ -186,7 +186,7 @@ class HealthyFoodScanner:
 def main():
     st.set_page_config(page_title="Healthy Food Scanner", page_icon="🥗", layout="wide")
     
-    st.title("🥗 Healthy Food Scanner")
+    st.title("🥗 Eatelligence")
     st.write("Scan a product barcode to get health information and find healthier alternatives!")
 
     scanner = HealthyFoodScanner()
@@ -201,8 +201,14 @@ def main():
     camera_col, info_col = st.columns([1, 1])
     
     with camera_col:
-        st.write("### 📸 Scan Barcode")
+        st.write("### Scan Barcode")
         camera_input = st.camera_input("Point camera at barcode", key="camera")
+        
+        # Clear product details when camera input is cleared
+        if camera_input is None and st.session_state.get('barcode_detected', False):
+            st.session_state.barcode_detected = False
+            st.session_state.product_info = None
+            st.rerun()
         
         if camera_input is not None:
             # Convert the image to numpy array
@@ -227,7 +233,7 @@ def main():
             product_info = st.session_state.product_info
             health_score = scanner.calculate_health_score(product_info)
             
-            st.write("### 📊 Product Information")
+            st.write("### Product Information")
             st.write(f"**Product:** {product_info.get('product_name', 'Unknown')}")
             st.write(f"**Brand:** {product_info.get('brands', 'Unknown Brand')}")
             
@@ -255,13 +261,6 @@ def main():
                                     st.write(f"- {label}: {formatted_value}{unit}")
                 else:
                     st.info("No healthier alternatives found in our database.")
-
-    # Reset button
-    if st.session_state.barcode_detected:
-        if st.button("Scan Another Product"):
-            st.session_state.barcode_detected = False
-            st.session_state.product_info = None
-            st.experimental_rerun()
 
 if __name__ == "__main__":
     main()
