@@ -64,9 +64,6 @@ class HealthyFoodScanner:
                 cv2.destroyAllWindows()
                 return barcode_data
 
-            remaining = int(timeout - (time.time() - start_time))
-            cv2.putText(frame, f"Time remaining: {remaining}s", (10, 30),
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
             cv2.imshow("Barcode Scanner (Press q to quit)", frame)
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -89,33 +86,12 @@ class HealthyFoodScanner:
             print(f"Error fetching product info: {e}")
             return None
 
-    def display_nutrition_facts(self, product_info: Dict):
-        """Display nutrition facts in US format"""
-        nutrients = product_info.get('nutriments', {})
-        serving_size = product_info.get('serving_size', 'Not specified')
-        
-        print("\nNUTRITION FACTS")
-        print("=" * 40)
-        print(f"Serving Size: {serving_size}")
-        print("-" * 40)
-        
-        # Display nutrients in standard US format
-        for nutrient_key, label, unit in self.nutrition_facts_order:
-            if nutrient_key in nutrients:
-                value = nutrients[nutrient_key]
-                if unit == 'mg' and nutrient_key.endswith('_100g'):
-                    # Convert g to mg for relevant nutrients
-                    value = float(value) * 1000
-                formatted_value = self.format_number(value)
-                print(f"{label}: {formatted_value}{unit}")
-
     def find_healthier_alternatives(self, product_info: Dict, health_score: float) -> List[Dict]:
         """Find healthier alternatives from US market"""
         categories = product_info.get('categories_tags', [])
         main_category = next((cat for cat in categories if cat), 'unknown')
         current_nutrients = product_info.get('nutriments', {})
         
-        # Search parameters specifically for US products
         params = {
             'action': 'process',
             'tagtype_0': 'categories',
@@ -125,7 +101,7 @@ class HealthyFoodScanner:
             'tag_contains_1': 'contains',
             'tag_1': 'united-states',
             'sort_by': 'nutrition_grades',
-            'page_size': 100,  # Increased to find more US products
+            'page_size': 100,
             'json': 1
         }
         
@@ -142,25 +118,18 @@ class HealthyFoodScanner:
                     alt_score = self.calculate_health_score(product)
                     alt_nutrients = product.get('nutriments', {})
                     
-                    # Only include products available in the US
                     countries = product.get('countries_tags', [])
                     if 'en:united-states' not in countries:
                         continue
 
                     if alt_score > health_score:
                         if self.is_healthier_option(current_nutrients, alt_nutrients):
-                            # Get US-specific store information
-                            stores = product.get('stores', 'Not specified')
-                            purchase_places = product.get('purchase_places', '')
-                            
                             alternatives.append({
                                 'name': product.get('product_name', 'Unknown'),
                                 'brand': product.get('brands', 'Unknown Brand'),
                                 'health_score': alt_score,
                                 'nutriments': alt_nutrients,
-                                'serving_size': product.get('serving_size', 'Not specified'),
-                                'stores': stores,
-                                'locations': purchase_places
+                                'serving_size': product.get('serving_size', 'Not specified')
                             })
                 
                 alternatives.sort(key=lambda x: x['health_score'], reverse=True)
@@ -254,8 +223,6 @@ def main():
             print(f"Brand: {product_info.get('brands', 'Unknown Brand')}")
             print(f"Health Score: {scanner.format_number(health_score)}/100")
             
-            scanner.display_nutrition_facts(product_info)
-            
             if health_score < 70:
                 print("\nHEALTHIER ALTERNATIVES")
                 print("=" * 40)
@@ -277,11 +244,6 @@ def main():
                                     value = float(value) * 1000
                                 formatted_value = scanner.format_number(value)
                                 print(f"   {label}: {formatted_value}{unit}")
-                        # Display store information if available
-                        if alt['stores'] != 'Not specified':
-                            print(f"   Available at: {alt['stores']}")
-                        if alt['locations']:
-                            print(f"   Found in: {alt['locations']}")
                         print()
                 else:
                     print("\nNo healthier alternatives found in our database.")
