@@ -1,10 +1,8 @@
-import streamlit as st
 import cv2
 from pyzbar import pyzbar
 import requests
-import numpy as np
-from typing import Dict, List, Optional, Union
 import time
+from typing import Dict, List, Optional, Union
 
 class HealthyFoodScanner:
     def __init__(self):
@@ -37,15 +35,42 @@ class HealthyFoodScanner:
         except (ValueError, TypeError):
             return str(value)
 
-    def process_frame(self, frame) -> Optional[str]:
-        """Process a single frame to detect barcodes"""
-        if frame is not None:
-            # Convert frame to grayscale for better barcode detection
+    def scan_barcode(self) -> Optional[str]:
+        """Scan barcode with 30-second timeout"""
+        cap = cv2.VideoCapture(0)
+        start_time = time.time()
+        timeout = 30
+
+        while True:
+            if time.time() - start_time > timeout:
+                print("\nTimeout: No barcode scanned within 30 seconds")
+                break
+
+            ret, frame = cap.read()
+            if not ret:
+                print("Failed to grab frame")
+                break
+
             barcodes = pyzbar.decode(frame)
-            
             for barcode in barcodes:
+                (x, y, w, h) = barcode.rect
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                
                 barcode_data = barcode.data.decode("utf-8")
+                cv2.putText(frame, barcode_data, (x, y - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                
+                cap.release()
+                cv2.destroyAllWindows()
                 return barcode_data
+
+            cv2.imshow("Barcode Scanner (Press q to quit)", frame)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        cap.release()
+        cv2.destroyAllWindows()
         return None
 
     def get_product_info(self, barcode: str) -> Optional[Dict]:
@@ -58,7 +83,7 @@ class HealthyFoodScanner:
                     return data['product']
             return None
         except Exception as e:
-            st.error(f"Error fetching product info: {e}")
+            print(f"Error fetching product info: {e}")
             return None
 
     def find_healthier_alternatives(self, product_info: Dict, health_score: float) -> List[Dict]:
@@ -82,47 +107,46 @@ class HealthyFoodScanner:
         
         alternatives = []
         try:
-            with st.spinner('Searching for healthier alternatives...'):
-                response = requests.get(self.search_url, params=params)
-                if response.status_code == 200:
-                    products = response.json().get('products', [])
-                    
-                    for product in products:
-                        if product.get('code') == product_info.get('code'):
-                            continue
-                            
-                        alt_score = self.calculate_health_score(product)
-                        alt_nutrients = product.get('nutriments', {})
+            response = requests.get(self.search_url, params=params)
+            if response.status_code == 200:
+                products = response.json().get('products', [])
+                
+                for product in products:
+                    if product.get('code') == product_info.get('code'):
+                        continue
                         
-                        countries = product.get('countries_tags', [])
-                        if 'en:united-states' not in countries:
-                            continue
+                    alt_score = self.calculate_health_score(product)
+                    alt_nutrients = product.get('nutriments', {})
+                    
+                    countries = product.get('countries_tags', [])
+                    if 'en:united-states' not in countries:
+                        continue
 
-                        if alt_score > health_score:
-                            if self.is_healthier_option(current_nutrients, alt_nutrients):
-                                alternatives.append({
-                                    'name': product.get('product_name', 'Unknown'),
-                                    'brand': product.get('brands', 'Unknown Brand'),
-                                    'health_score': alt_score,
-                                    'nutriments': alt_nutrients,
-                                    'serving_size': product.get('serving_size', 'Not specified')
-                                })
-                    
-                    alternatives.sort(key=lambda x: x['health_score'], reverse=True)
-                    unique_alts = []
-                    seen = set()
-                    
-                    for alt in alternatives:
-                        if alt['name'] not in seen:
-                            seen.add(alt['name'])
-                            unique_alts.append(alt)
-                            if len(unique_alts) >= 3:
-                                break
-                    
-                    return unique_alts
-                    
+                    if alt_score > health_score:
+                        if self.is_healthier_option(current_nutrients, alt_nutrients):
+                            alternatives.append({
+                                'name': product.get('product_name', 'Unknown'),
+                                'brand': product.get('brands', 'Unknown Brand'),
+                                'health_score': alt_score,
+                                'nutriments': alt_nutrients,
+                                'serving_size': product.get('serving_size', 'Not specified')
+                            })
+                
+                alternatives.sort(key=lambda x: x['health_score'], reverse=True)
+                unique_alts = []
+                seen = set()
+                
+                for alt in alternatives:
+                    if alt['name'] not in seen:
+                        seen.add(alt['name'])
+                        unique_alts.append(alt)
+                        if len(unique_alts) >= 3:
+                            break
+                
+                return unique_alts
+                
         except Exception as e:
-            st.error(f"Error finding alternatives: {e}")
+            print(f"Error finding alternatives: {e}")
             return []
 
     def is_healthier_option(self, current_nutrients: Dict, alt_nutrients: Dict) -> bool:
@@ -184,90 +208,49 @@ class HealthyFoodScanner:
         return max(1.0, min(100.0, score))
 
 def main():
-    st.set_page_config(page_title="Healthy Food Scanner", page_icon="🥗", layout="wide")
-    
-    st.title("🥗 Eatelligence")
-    st.write("Scan a product barcode to get health information and find healthier alternatives!")
-
     scanner = HealthyFoodScanner()
-
-    # Initialize session state
-    if 'barcode_detected' not in st.session_state:
-        st.session_state.barcode_detected = False
-    if 'product_info' not in st.session_state:
-        st.session_state.product_info = None
-
-    # Camera input
-    camera_col, info_col = st.columns([1, 1])
+    print("Please show a barcode to the camera (30-second timeout)...")
     
-    with camera_col:
-        st.write("### Scan Barcode")
-        camera_input = st.camera_input("Point camera at barcode", key="camera")
+    barcode = scanner.scan_barcode()
+    if barcode:
+        print(f"\nBarcode detected: {barcode}")
+        product_info = scanner.get_product_info(barcode)
         
-        # Clear product details when camera input is cleared
-        if camera_input is None and st.session_state.get('barcode_detected', False):
-            st.session_state.barcode_detected = False
-            st.session_state.product_info = None
-            st.experimental_rerun()
-        
-        if camera_input is not None:
-            # Convert the image to numpy array
-            image = cv2.imdecode(np.frombuffer(camera_input.getvalue(), np.uint8), cv2.IMREAD_COLOR)
-            
-            # Process the frame
-            barcode = scanner.process_frame(image)
-            
-            if barcode:
-                st.session_state.barcode_detected = True
-                with st.spinner('Getting product information...'):
-                    product_info = scanner.get_product_info(barcode)
-                    if product_info:
-                        st.session_state.product_info = product_info
-                    else:
-                        st.error("Product not found in database")
-            else:
-                st.warning("No barcode detected. Please try again.")
-
-    with info_col:
-        if st.session_state.product_info:
-            product_info = st.session_state.product_info
+        if product_info:
             health_score = scanner.calculate_health_score(product_info)
             
-            st.write("### Product Information")
-            st.write(f"**Product:** {product_info.get('product_name', 'Unknown')}")
-            st.write(f"**Brand:** {product_info.get('brands', 'Unknown Brand')}")
-            
-            # Display health score with color
-            score_color = 'red' if health_score < 50 else 'orange' if health_score < 70 else 'green'
-            st.markdown(f"**Health Score:** <span style='color:{score_color}'>{scanner.format_number(health_score)}/100</span>", unsafe_allow_html=True)
+            print(f"\nProduct: {product_info.get('product_name', 'Unknown')}")
+            print(f"Brand: {product_info.get('brands', 'Unknown Brand')}")
+            print(f"Health Score: {scanner.format_number(health_score)}/100")
             
             if health_score < 70:
-                st.write("### 🥬 Healthier Alternatives")
+                print("\nHEALTHIER ALTERNATIVES")
+                print("=" * 40)
                 alternatives = scanner.find_healthier_alternatives(product_info, health_score)
                 
                 if alternatives:
                     for i, alt in enumerate(alternatives, 1):
-                        with st.expander(f"{i}. {alt['name']} by {alt['brand']} (Score: {scanner.format_number(alt['health_score'])}/100)"):
-                            st.write(f"**Serving Size:** {alt['serving_size']}")
-                            
-                            st.write("**Nutrition Facts:**")
-                            nutrients = alt['nutriments']
-                            for nutrient_key, label, unit in scanner.nutrition_facts_order:
-                                if nutrient_key in nutrients:
-                                    value = nutrients[nutrient_key]
-                                    if unit == 'mg' and nutrient_key.endswith('_100g'):
-                                        value = float(value) * 1000
-                                    formatted_value = scanner.format_number(value)
-                                    st.write(f"- {label}: {formatted_value}{unit}")
+                        print(f"\n{i}. {alt['name']} by {alt['brand']}")
+                        print(f"   Health Score: {scanner.format_number(alt['health_score'])}/100")
+                        print(f"   Serving Size: {alt['serving_size']}")
+                        
+                        print("\n   Nutrition Facts:")
+                        print("   " + "=" * 30)
+                        nutrients = alt['nutriments']
+                        for nutrient_key, label, unit in scanner.nutrition_facts_order:
+                            if nutrient_key in nutrients:
+                                value = nutrients[nutrient_key]
+                                if unit == 'mg' and nutrient_key.endswith('_100g'):
+                                    value = float(value) * 1000
+                                formatted_value = scanner.format_number(value)
+                                print(f"   {label}: {formatted_value}{unit}")
+                        print()
                 else:
-                    st.info("No healthier alternatives found in our database.")
-
-    # Reset button
-    if st.session_state.barcode_detected:
-        if st.button("Scan Another Product"):
-            st.session_state.barcode_detected = False
-            st.session_state.product_info = None
-            st.experimental_rerun()
+                    print("\nNo healthier alternatives found in our database.")
+        else:
+            print("Product not found in database")
+    else:
+        print("No barcode detected or scan timeout")
 
 if __name__ == "__main__":
     main()
