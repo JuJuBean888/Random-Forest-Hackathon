@@ -10,7 +10,7 @@ import json
 import google.generativeai as genai
 
 # Initialize Gemini API key
-GEMINI_API_KEY = "AIzaSyCw35Y2XcvssfOLtzthZrtAzFqdDsNCsRk"  # Leave empty for user to fill
+GEMINI_API_KEY = ""  # Leave empty for user to fill (User must create a free API key for gemini by google and use it here)
 
 class StoreFinder:
     """Handles finding healthy food stores using Gemini AI"""
